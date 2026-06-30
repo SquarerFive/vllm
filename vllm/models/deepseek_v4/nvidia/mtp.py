@@ -45,6 +45,7 @@ from vllm.models.deepseek_v4.common.ops import (
     fused_mtp_input_rmsnorm,
     mtp_shared_head_rmsnorm,
 )
+from vllm.platforms import current_platform
 from vllm.sequence import IntermediateTensors
 
 from .model import (
@@ -173,12 +174,14 @@ class DeepSeekV4MultiTokenPredictor(nn.Module):
         config = vllm_config.model_config.hf_config
         self.mtp_start_layer_idx = config.num_hidden_layers
         self.num_mtp_layers = config.num_nextn_predict_layers
+        self.device = current_platform.device_type
 
         topk_tokens = config.index_topk
         self.topk_indices_buffer = torch.empty(
             vllm_config.scheduler_config.max_num_batched_tokens,
             topk_tokens,
             dtype=torch.int32,
+            device=self.device,
         )
 
         # Three aux streams shared across all MTP layers, mirroring DeepseekV4Model.

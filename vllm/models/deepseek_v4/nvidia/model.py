@@ -956,6 +956,7 @@ class DeepseekV4Model(nn.Module):
         self.hc_mult = config.hc_mult
         self.hc_dim = self.hc_mult * config.hidden_size
         self.rms_norm_eps = config.rms_norm_eps
+        self.device = current_platform.device_type
 
         # Three aux streams: one per non-default input GEMM in
         # DeepseekV4Attention.attn_gemm_parallel_execute
@@ -968,6 +969,7 @@ class DeepseekV4Model(nn.Module):
             vllm_config.scheduler_config.max_num_batched_tokens,
             config.index_topk,
             dtype=torch.int32,
+            device=self.device,
         )
 
         if get_pp_group().is_first_rank:
@@ -1026,6 +1028,7 @@ class DeepseekV4Model(nn.Module):
                 vllm_config.scheduler_config.max_num_batched_tokens,
                 self.hc_dim,
                 dtype=torch.bfloat16,
+                device=self.device,
             )
         else:
             self._mtp_hidden_buffer = None

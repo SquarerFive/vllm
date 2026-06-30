@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import torch
 
-from vllm.platforms import current_platform
 from vllm.utils.torch_utils import direct_register_custom_op
 
 
@@ -625,21 +624,6 @@ def hc_head_fused_kernel_tilelang(
         num_tokens, hidden_size, dtype=torch.bfloat16, device=hs_flat.device
     )
     if num_tokens == 0:
-        return out
-    if current_platform.is_cuda() and current_platform.is_device_capability_family(
-        120
-    ):
-        torch.ops.vllm.hc_head_triton(
-            hs_flat,
-            fn,
-            hc_scale,
-            hc_base,
-            out,
-            hidden_size,
-            rms_eps,
-            hc_eps,
-            hc_mult,
-        )
         return out
     from vllm.model_executor.kernels.mhc.tilelang_kernels import hc_head_fuse_tilelang
 
