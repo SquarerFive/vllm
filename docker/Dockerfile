@@ -382,6 +382,10 @@ ARG SCCACHE_S3_NO_CREDENTIALS=0
 ARG VLLM_USE_PRECOMPILED=""
 ARG VLLM_MERGE_BASE_COMMIT=""
 ARG VLLM_MAIN_CUDA_VERSION=""
+ARG deepgemm_git_repo="https://github.com/jasl/DeepGEMM.git"
+ARG deepgemm_git_ref="7a7a41a1bac7dacabe74057e7600e59f98f85bce"
+ENV DEEPGEMM_GIT_REPO=${deepgemm_git_repo}
+ENV DEEPGEMM_GIT_REF=${deepgemm_git_ref}
 
 # Use dummy version for csrc-build wheel (only .so files are extracted, version doesn't matter)
 ENV SETUPTOOLS_SCM_PRETEND_VERSION="0.0.0+csrc.build"

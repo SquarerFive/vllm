@@ -561,6 +561,9 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         # buffer is already int64, so no cast is needed.
         assert positions.dtype == torch.int64
         cos_sin_cache = self.rotary_emb.cos_sin_cache
+        if cos_sin_cache.dtype != torch.float32:
+            cos_sin_cache = cos_sin_cache.float()
+            self.rotary_emb.cos_sin_cache = cos_sin_cache
         cache_dtype = swa_kv_cache.dtype
 
         # kv is unchanged; attention reads kv solely via swa_kv_cache.

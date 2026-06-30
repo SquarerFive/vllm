@@ -6,13 +6,21 @@ set -e
 
 # Default values
 # Keep DEEPGEMM_GIT_REF in sync with cmake/external_projects/deepgemm.cmake
-DEEPGEMM_GIT_REPO="https://github.com/deepseek-ai/DeepGEMM.git"
-DEEPGEMM_GIT_REF="891d57b4db1071624b5c8fa0d1e51cb317fa709f"
+DEEPGEMM_GIT_REPO="${DEEPGEMM_GIT_REPO:-https://github.com/deepseek-ai/DeepGEMM.git}"
+DEEPGEMM_GIT_REF="${DEEPGEMM_GIT_REF:-891d57b4db1071624b5c8fa0d1e51cb317fa709f}"
 WHEEL_DIR=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --repo)
+            if [[ -z "$2" || "$2" =~ ^- ]]; then
+                echo "Error: --repo requires an argument." >&2
+                exit 1
+            fi
+            DEEPGEMM_GIT_REPO="$2"
+            shift 2
+            ;;
         --ref)
             if [[ -z "$2" || "$2" =~ ^- ]]; then
                 echo "Error: --ref requires an argument." >&2
@@ -40,6 +48,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
+            echo "  --repo REPO        Git repository to clone (default: $DEEPGEMM_GIT_REPO)"
             echo "  --ref REF          Git reference to checkout (default: $DEEPGEMM_GIT_REF)"
             echo "  --cuda-version VER CUDA version (auto-detected if not provided)"
             echo "  --wheel-dir PATH   If set, build wheel into PATH but do not install"

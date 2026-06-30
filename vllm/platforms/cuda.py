@@ -664,10 +664,11 @@ class CudaPlatformBase(Platform):
 
     @classmethod
     def support_deep_gemm(cls) -> bool:
-        """Currently, only Hopper and Blackwell datacenter GPUs are supported."""
+        """Return whether DeepGEMM is supported on this CUDA architecture."""
         return (
             cls.is_device_capability(90)
             or cls.is_device_capability_family(100)
+            or cls.is_device_capability_family(120)
         )
 
     @classmethod
