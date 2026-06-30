@@ -7,7 +7,11 @@ from vllm.models.deepseek_v4.common.ops.fused_inv_rope_fp8_quant import (
     fused_inv_rope_fp8_quant,
 )
 from vllm.platforms import current_platform
-from vllm.utils.deep_gemm import fp8_einsum
+from vllm.utils.deep_gemm import fp8_einsum, is_deep_gemm_supported
+from vllm.v1.attention.ops.rocm_aiter_mla_sparse import (
+    _fused_inverse_rope_gptj,
+    _get_cached_wo_a_bf16,
+)
 
 
 def compute_fp8_einsum_recipe() -> tuple[tuple[int, int, int], bool]:
@@ -45,6 +49,18 @@ def deep_gemm_fp8_o_proj(
     Shared by the FlashMLA and FlashInfer CUDA backends. ``einsum_recipe`` /
     ``tma_aligned_scales`` come from ``compute_fp8_einsum_recipe``.
     """
+    if cos_sin_cache.dtype != torch.float32:
+        cos_sin_cache = cos_sin_cache.float()
+
+    if not is_deep_gemm_supported():
+        o_ref = _fused_inverse_rope_gptj(o, positions, cos_sin_cache, rope_dim)
+        o_ref = o_ref.view(o.shape[0], n_groups, -1)
+        wo_a_weight = _get_cached_wo_a_bf16(
+            wo_a, n_groups, o_lora_rank, o_ref.shape[-1]
+        )
+        z = torch.einsum("tgd,grd->tgr", o_ref, wo_a_weight)
+        return wo_b(z.flatten(1))
+
     o_fp8, o_scale = fused_inv_rope_fp8_quant(
         o,
         positions,
