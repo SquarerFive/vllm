@@ -264,8 +264,9 @@ RUN --mount=type=cache,target=/opt/uv/cache \
 # Do not add +PTX here: vLLM filters torch's top-level PTX flag when it
 # converts global gencode flags into per-kernel arch lists. If a specific
 # kernel needs PTX, add +PTX to that kernel's CMake arch list instead.
-ARG torch_cuda_arch_list='7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0'
+ARG torch_cuda_arch_list='12.0'
 ENV TORCH_CUDA_ARCH_LIST=${torch_cuda_arch_list}
+ENV VLLM_FORCE_SM120A=1
 #################### BUILD BASE IMAGE ####################
 
 #################### RUST BUILD IMAGE ####################
@@ -289,7 +290,7 @@ RUN if [ "${BUILD_OS}" = "manylinux" ]; then \
     fi
 
 COPY tools/install_protoc.sh /tmp/install_protoc.sh
-RUN /tmp/install_protoc.sh && rm /tmp/install_protoc.sh
+RUN bash /tmp/install_protoc.sh && rm /tmp/install_protoc.sh
 
 WORKDIR /workspace
 
@@ -468,10 +469,11 @@ COPY tools/ep_kernels/install_python_libraries.sh /tmp/install_python_libraries.
 # Defaults moved here from tools/ep_kernels/install_python_libraries.sh for centralized version management
 ARG DEEPEP_COMMIT_HASH=73b6ea4
 ARG NVSHMEM_VER
+ARG ep_torch_cuda_arch_list='12.0a'
 RUN --mount=type=cache,target=/opt/uv/cache \
     mkdir -p /tmp/ep_kernels_workspace/dist && \
-    export TORCH_CUDA_ARCH_LIST='9.0a 10.0a' && \
-    /tmp/install_python_libraries.sh \
+    export TORCH_CUDA_ARCH_LIST="${ep_torch_cuda_arch_list}" && \
+    bash /tmp/install_python_libraries.sh \
         --workspace /tmp/ep_kernels_workspace \
         --mode wheel \
         ${DEEPEP_COMMIT_HASH:+--deepep-ref "$DEEPEP_COMMIT_HASH"} \
@@ -815,7 +817,7 @@ RUN set -eux; \
       linux/amd64) UUARCH="x64" ;; \
       *) echo "Unsupported TARGETPLATFORM: ${TARGETPLATFORM}" >&2; exit 1 ;; \
     esac; \
-    /tmp/install_gdrcopy.sh "${GDRCOPY_OS_VERSION}" "${GDRCOPY_CUDA_VERSION}" "${UUARCH}" && \
+    bash /tmp/install_gdrcopy.sh "${GDRCOPY_OS_VERSION}" "${GDRCOPY_CUDA_VERSION}" "${UUARCH}" && \
     rm /tmp/install_gdrcopy.sh
 
 # Install vllm-openai dependencies (saves ~2.6s per build)
@@ -1008,8 +1010,9 @@ ENV UV_HTTP_TIMEOUT=500
 
 # install kv_connectors if requested
 # Do not add +PTX here; see the main TORCH_CUDA_ARCH_LIST comment above.
-ARG torch_cuda_arch_list='7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0'
+ARG torch_cuda_arch_list='12.0'
 ENV TORCH_CUDA_ARCH_LIST=${torch_cuda_arch_list}
+ENV VLLM_FORCE_SM120A=1
 RUN --mount=type=cache,target=/opt/uv/cache \
     --mount=type=bind,source=requirements/kv_connectors.txt,target=/tmp/kv_connectors.txt,ro \
     CUDA_MAJOR="${CUDA_VERSION%%.*}"; \

@@ -81,6 +81,10 @@ else()
 endif()
 
 if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER_EQUAL 12.8 AND QUTLASS_ARCHS)
+  message(STATUS
+    "[QUTLASS] Building for archs: ${QUTLASS_ARCHS}; "
+    "TARGET_CUDA_ARCH=${QUTLASS_TARGET_CC}")
+
   set(QUTLASS_SOURCES
     csrc/qutlass_registration.cpp
     ${qutlass_SOURCE_DIR}/qutlass/csrc/bindings.cpp

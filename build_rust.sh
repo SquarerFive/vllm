@@ -10,7 +10,11 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 # Read the required toolchain from rust-toolchain.toml.
-TOOLCHAIN=$(grep '^channel' "$REPO_ROOT/rust-toolchain.toml" | sed 's/.*= *"\(.*\)"/\1/')
+TOOLCHAIN=$(
+    grep '^channel' "$REPO_ROOT/rust-toolchain.toml" \
+        | sed 's/.*= *"\(.*\)"/\1/' \
+        | tr -d '\r'
+)
 
 # Ensure rustup and the required toolchain are available.
 if ! command -v rustup &>/dev/null; then

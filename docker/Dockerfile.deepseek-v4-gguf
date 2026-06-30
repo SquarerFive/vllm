@@ -1,0 +1,109 @@
+# syntax=docker/dockerfile:1.7
+
+# DeepSeek V4 GGUF runtime image.
+#
+# Build the CUDA vLLM image first, then layer the DeepSeek V4 GGUF dependencies
+# on top:
+#
+#   docker build -f docker/Dockerfile --target vllm-openai \
+#     --build-arg max_jobs=5 \
+#     --build-arg torch_cuda_arch_list='12.0' \
+#     --build-arg ep_torch_cuda_arch_list='12.0a' \
+#     -t local/vllm-openai:cuda .
+#   docker build -f docker/Dockerfile.deepseek-v4-gguf \
+#     --build-arg VLLM_CUDA_IMAGE=local/vllm-openai:cuda \
+#     -t local/vllm-openai:deepseek-v4-gguf .
+
+ARG VLLM_CUDA_IMAGE=vllm/vllm-openai:latest
+FROM ${VLLM_CUDA_IMAGE}
+
+USER root
+
+ARG LLAMA_CPP_GGUF_REF=8c146a8366304c871efc26057cc90370ccf58dad
+ARG TRANSFORMERS_REPO=https://github.com/SquarerFive/transformers.git
+ARG TRANSFORMERS_REF=65f6a9d9f59575f2a75a11e4e2da6a188afb925f
+ARG GGUF_PLUGIN_REPO=https://github.com/SquarerFive/vllm-gguf-plugin.git
+ARG GGUF_PLUGIN_REF=5815c3e55df21d3f5b5d1f5cdd73685bfd970305
+
+ENV UV_HTTP_TIMEOUT=500
+ENV MAX_JOBS=5
+ENV CMAKE_BUILD_PARALLEL_LEVEL=5
+ENV MAKEFLAGS=-j5
+ENV VLLM_FORCE_SM120A=1
+
+RUN apt update \
+    && apt install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
+# DeepSeek V4 GGUF uses the llama.cpp architecture name "deepseek4". The PyPI
+# gguf package can lag llama.cpp and may only expose deepseek/deepseek2, so use
+# gguf-py from llama.cpp at a ref known to include deepseek4.
+RUN --mount=type=cache,target=/opt/uv/cache \
+    uv pip install --system --force-reinstall --no-deps \
+        "gguf @ git+https://github.com/ggerganov/llama.cpp.git@${LLAMA_CPP_GGUF_REF}#subdirectory=gguf-py"
+
+# Install the Transformers fork for DeepSeek V4 config/model/GGUF conversion
+# support after vLLM is installed, overriding the base image's pinned
+# transformers wheel without perturbing torch/vLLM dependencies.
+RUN --mount=type=cache,target=/opt/uv/cache \
+    uv pip install --system --force-reinstall --no-deps \
+        "transformers @ git+${TRANSFORMERS_REPO}@${TRANSFORMERS_REF}"
+
+# Install the out-of-tree GGUF plugin from the fork. Dependencies are installed
+# explicitly above to avoid a resolver pass replacing the local vLLM wheel.
+RUN --mount=type=cache,target=/opt/uv/cache \
+    uv pip install --system --force-reinstall --no-deps \
+        "vllm-gguf-plugin @ git+${GGUF_PLUGIN_REPO}@${GGUF_PLUGIN_REF}"
+
+RUN python3 - <<'PY'
+import gguf
+import inspect
+from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
+from vllm_gguf_plugin.quantization import GGUFConfig
+import vllm_gguf_plugin.weights_adapter.default as default_adapter_module
+from vllm_gguf_plugin.weights_adapter.default import (
+    GGUFWeightsAdapter,
+    _normalize_deepseek_v4_config,
+    _resolve_gguf_model_type,
+)
+
+assert "deepseek4" in set(gguf.MODEL_ARCH_NAMES.values()), (
+    "installed gguf does not expose the deepseek4 architecture"
+)
+assert MODEL_FOR_CAUSAL_LM_MAPPING_NAMES["deepseek_v4"] == "DeepseekV4ForCausalLM"
+assert GGUFWeightsAdapter.matches(type("Config", (), {"model_type": "deepseek_v4"})())
+assert _resolve_gguf_model_type(
+    "deepseek_v4", ("deepseek4", "deepseek2")
+) == "deepseek4"
+adapter_source = inspect.getsource(default_adapter_module.GGUFWeightsAdapter.build_name_map)
+deepseek_v4_branch = adapter_source.split(
+    'if model_type in ("deepseek_v4", "deepseek_v4_flash"):'
+)[1].split('if model_type in ("qwen2_moe", "qwen3_moe"):')[0]
+assert "model.layers.{idx}.attn.wkv.weight" in deepseek_v4_branch
+assert "model.layers.{idx}.ffn.experts.0.w1.weight" in deepseek_v4_branch
+assert "model.layers.{idx}.mlp.experts.0.gate_proj.weight" not in deepseek_v4_branch
+assert GGUFConfig.override_quantization_method(
+    {}, "gguf", hf_config=object()
+) == "gguf"
+
+
+class DeepseekV4ConfigProbe:
+    model_type = "deepseek_v4"
+
+    def get_text_config(self):
+        return self
+
+    def update(self, values):
+        for key, value in values.items():
+            setattr(self, key, value)
+
+
+probe = DeepseekV4ConfigProbe()
+_normalize_deepseek_v4_config(probe)
+assert hasattr(probe, "pad_token_id")
+assert len(probe.layer_types) == probe.num_hidden_layers
+assert len(probe.mlp_layer_types) == probe.num_hidden_layers
+assert probe.rope_parameters["main"]["rope_theta"] == probe.rope_theta
+PY
+
+ENTRYPOINT ["vllm", "serve"]

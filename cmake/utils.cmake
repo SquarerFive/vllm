@@ -470,6 +470,21 @@ function(cuda_archs_loose_intersection OUT_CUDA_ARCHS SRC_CUDA_ARCHS TGT_CUDA_AR
 
   list(REMOVE_DUPLICATES _CUDA_ARCHS)
 
+  if(DEFINED ENV{VLLM_FORCE_SM120A}
+     AND NOT "$ENV{VLLM_FORCE_SM120A}" STREQUAL ""
+     AND NOT "$ENV{VLLM_FORCE_SM120A}" STREQUAL "0")
+    set(_SM120A_ARCHS)
+    foreach(_arch ${_CUDA_ARCHS})
+      if(_arch STREQUAL "12.0f" OR _arch STREQUAL "12.1f")
+        list(APPEND _SM120A_ARCHS "12.0a")
+      else()
+        list(APPEND _SM120A_ARCHS "${_arch}")
+      endif()
+    endforeach()
+    list(REMOVE_DUPLICATES _SM120A_ARCHS)
+    set(_CUDA_ARCHS ${_SM120A_ARCHS})
+  endif()
+
   # reapply +PTX suffix to architectures that requested PTX
   set(_FINAL_ARCHS)
   foreach(_arch ${_CUDA_ARCHS})
