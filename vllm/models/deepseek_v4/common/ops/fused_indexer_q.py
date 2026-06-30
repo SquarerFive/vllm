@@ -330,9 +330,14 @@ def fused_indexer_q_rope_quant(
 
     # CuTe DSL kernels are compiled for bf16 input.  GGUF weight loading can
     # produce fp16 activations (model_config.dtype=torch.float16), so ensure
-    # the q tensor is bf16 before passing to the compiled kernels.
-    if has_cutedsl() and index_q.dtype != torch.bfloat16:
-        index_q = index_q.to(torch.bfloat16)
+    # all bf16-expected inputs are bf16 before passing to the compiled kernels.
+    if has_cutedsl():
+        if index_q.dtype != torch.bfloat16:
+            index_q = index_q.to(torch.bfloat16)
+        if index_q_cos_sin_cache.dtype != torch.bfloat16:
+            index_q_cos_sin_cache = index_q_cos_sin_cache.to(torch.bfloat16)
+        if index_weights.dtype != torch.bfloat16:
+            index_weights = index_weights.to(torch.bfloat16)
 
     if use_fp4:
         assert index_q_head_dim % MXFP4_BLOCK_SIZE == 0, (
