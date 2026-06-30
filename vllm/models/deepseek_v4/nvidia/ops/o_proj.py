@@ -55,10 +55,16 @@ def deep_gemm_fp8_o_proj(
     if not is_deep_gemm_supported():
         o_ref = _fused_inverse_rope_gptj(o, positions, cos_sin_cache, rope_dim)
         o_ref = o_ref.view(o.shape[0], n_groups, -1)
-        wo_a_weight = _get_cached_wo_a_bf16(
-            wo_a, n_groups, o_lora_rank, o_ref.shape[-1]
-        )
-        z = torch.einsum("tgd,grd->tgr", o_ref, wo_a_weight)
+        if hasattr(wo_a, "weight"):
+            wo_a_weight = _get_cached_wo_a_bf16(
+                wo_a, n_groups, o_lora_rank, o_ref.shape[-1]
+            )
+            z = torch.einsum("tgd,grd->tgr", o_ref, wo_a_weight)
+        else:
+            z = wo_a(o_ref.flatten(1))
+            if isinstance(z, tuple):
+                z = z[0]
+            z = z.view(o.shape[0], n_groups, o_lora_rank)
         return wo_b(z.flatten(1))
 
     o_fp8, o_scale = fused_inv_rope_fp8_quant(
