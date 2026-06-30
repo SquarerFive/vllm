@@ -315,6 +315,7 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
                 rotate=True,
                 prefix=f"{prefix}.compressor",
                 k_cache_prefix=self.prefix,
+                quant_config=quant_config,
             )
 
     def forward(
@@ -382,10 +383,8 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             compressor = self.compressor
 
             def compressor_kv_score() -> torch.Tensor:
-                return torch.mm(
-                    hidden_states,
-                    compressor.fused_wkv_wgate.weight.T,
-                    out_dtype=torch.float32,
+                return self._fused_wkv_wgate(
+                    compressor.fused_wkv_wgate, hidden_states
                 )
 
             aux_fns[0] = compressor_kv_score
@@ -399,10 +398,8 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
                 return weights
 
             def indexer_compressor_kv_score() -> torch.Tensor:
-                return torch.mm(
-                    hidden_states,
-                    indexer.compressor.fused_wkv_wgate.weight.T,
-                    out_dtype=torch.float32,
+                return self._fused_wkv_wgate(
+                    indexer.compressor.fused_wkv_wgate, hidden_states
                 )
 
             aux_fns[1] = indexer_weights_proj
@@ -424,6 +421,22 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         )
 
         return qr_kv, kv_score, indexer_kv_score, indexer_weights
+
+    @staticmethod
+    def _fused_wkv_wgate(
+        fused_wkv_wgate: nn.Module,
+        hidden_states: torch.Tensor,
+    ) -> torch.Tensor:
+        if not hasattr(fused_wkv_wgate, "weight"):
+            kv_score = fused_wkv_wgate(hidden_states)
+            if isinstance(kv_score, tuple):
+                kv_score = kv_score[0]
+            return kv_score.to(torch.float32)
+
+        weight = fused_wkv_wgate.weight
+        if hidden_states.dtype != weight.dtype:
+            hidden_states = hidden_states.to(weight.dtype)
+        return torch.mm(hidden_states, weight.T, out_dtype=torch.float32)
 
     @eager_break_during_capture
     def attention_impl(
@@ -703,7 +716,7 @@ class DeepseekV4Indexer(nn.Module):
             hidden_size,
             self.n_head,
             bias=False,
-            quant_config=None,
+            quant_config=quant_config,
             prefix=f"{prefix}.weights_proj",
         )
         self.softmax_scale = self.head_dim**-0.5
@@ -743,6 +756,7 @@ class DeepseekV4Indexer(nn.Module):
             prefix=f"{prefix}.compressor",
             k_cache_prefix=self.k_cache.prefix,
             use_fp4_cache=self.use_fp4_kv,
+            quant_config=quant_config,
         )
 
         self.indexer_op = SparseAttnIndexer(
