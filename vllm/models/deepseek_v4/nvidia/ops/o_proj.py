@@ -14,6 +14,15 @@ from vllm.v1.attention.ops.rocm_aiter_mla_sparse import (
 )
 
 
+def _linear_forward(linear: nn.Module, x: torch.Tensor) -> torch.Tensor:
+    if hasattr(linear, "weight") and x.dtype != linear.weight.dtype:
+        x = x.to(linear.weight.dtype)
+    output = linear(x)
+    if isinstance(output, tuple):
+        output = output[0]
+    return output
+
+
 def compute_fp8_einsum_recipe() -> tuple[tuple[int, int, int], bool]:
     """fp8_einsum recipe + scale layout for the current GPU arch.
 
@@ -61,11 +70,9 @@ def deep_gemm_fp8_o_proj(
             )
             z = torch.einsum("tgd,grd->tgr", o_ref, wo_a_weight)
         else:
-            z = wo_a(o_ref.flatten(1))
-            if isinstance(z, tuple):
-                z = z[0]
+            z = _linear_forward(wo_a, o_ref.flatten(1))
             z = z.view(o.shape[0], n_groups, o_lora_rank)
-        return wo_b(z.flatten(1))
+        return _linear_forward(wo_b, z.flatten(1))
 
     o_fp8, o_scale = fused_inv_rope_fp8_quant(
         o,
@@ -89,4 +96,4 @@ def deep_gemm_fp8_o_proj(
         z,
         recipe=einsum_recipe,
     )
-    return wo_b(z.flatten(1))
+    return _linear_forward(wo_b, z.flatten(1))

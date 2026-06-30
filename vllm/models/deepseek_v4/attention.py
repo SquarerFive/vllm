@@ -61,6 +61,15 @@ from vllm.v1.kv_cache_interface import KVCacheSpec, MLAAttentionSpec
 logger = init_logger(__name__)
 
 
+def _linear_forward(linear: nn.Module, x: torch.Tensor) -> torch.Tensor:
+    if hasattr(linear, "weight") and x.dtype != linear.weight.dtype:
+        x = x.to(linear.weight.dtype)
+    output = linear(x)
+    if isinstance(output, tuple):
+        output = output[0]
+    return output
+
+
 def _resolve_dsv4_kv_cache_dtype(
     use_fp8_ds_mla_layout: bool,
     kv_cache_dtype: str,
@@ -393,9 +402,7 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             indexer = self.indexer
 
             def indexer_weights_proj() -> torch.Tensor:
-                # ReplicatedLinear returns (output, bias); bias is None.
-                weights, _ = indexer.weights_proj(hidden_states)
-                return weights
+                return _linear_forward(indexer.weights_proj, hidden_states)
 
             def indexer_compressor_kv_score() -> torch.Tensor:
                 return self._fused_wkv_wgate(
@@ -406,9 +413,7 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             aux_fns[2] = indexer_compressor_kv_score
 
         def fused_wqa_wkv() -> torch.Tensor:
-            # MergedColumnParallelLinear returns (output, bias); bias is None.
-            qr_kv, _ = self.fused_wqa_wkv(hidden_states)
-            return qr_kv
+            return _linear_forward(self.fused_wqa_wkv, hidden_states)
 
         qr_kv, (kv_score, indexer_weights, indexer_kv_score) = execute_in_parallel(
             fused_wqa_wkv,
@@ -465,7 +470,9 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             compressor = self.compressor
 
             def wq_b_kv_insert() -> torch.Tensor:
-                q = self.wq_b(qr).view(-1, self.n_local_heads, self.head_dim)
+                q = _linear_forward(self.wq_b, qr).view(
+                    -1, self.n_local_heads, self.head_dim
+                )
                 q = self._fused_qnorm_rope_kv_insert(q, kv, positions, attn_metadata)
                 return q
 
@@ -499,7 +506,9 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             compressor = self.compressor
 
             def wq_b_kv_insert() -> torch.Tensor:
-                q = self.wq_b(qr).view(-1, self.n_local_heads, self.head_dim)
+                q = _linear_forward(self.wq_b, qr).view(
+                    -1, self.n_local_heads, self.head_dim
+                )
                 q = self._fused_qnorm_rope_kv_insert(q, kv, positions, attn_metadata)
                 return q
 
@@ -512,7 +521,9 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             )
         else:
             # SWA-only layer: no compressor, no overlap.
-            q = self.wq_b(qr).view(-1, self.n_local_heads, self.head_dim)
+            q = _linear_forward(self.wq_b, qr).view(
+                -1, self.n_local_heads, self.head_dim
+            )
             q = self._fused_qnorm_rope_kv_insert(q, kv, positions, attn_metadata)
 
         # MLA attention writes into the pre-allocated `out` buffer
@@ -791,8 +802,7 @@ class DeepseekV4Indexer(nn.Module):
         compressor = self.compressor
 
         def wq_b_and_q_quant():
-            # ReplicatedLinear returns (output, bias); bias is None.
-            q, _ = self.wq_b(qr)
+            q = _linear_forward(self.wq_b, qr)
             q = q.view(-1, self.n_head, self.head_dim)
             return fused_indexer_q_rope_quant(
                 positions,
