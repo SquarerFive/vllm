@@ -1063,7 +1063,7 @@ class DeepseekV4Model(nn.Module):
             self._mtp_hidden_buffer = torch.empty(
                 vllm_config.scheduler_config.max_num_batched_tokens,
                 self.hc_dim,
-                dtype=vllm_config.model_config.dtype,
+                dtype=torch.bfloat16,
                 device=self.device,
             )
         else:
@@ -1086,7 +1086,7 @@ class DeepseekV4Model(nn.Module):
             {
                 "hidden_states": torch.zeros(
                     (batch_size, self.hc_mult, self.config.hidden_size),
-                    dtype=dtype,
+                    dtype=torch.bfloat16,
                     device=device,
                 ),
             }
@@ -1108,6 +1108,8 @@ class DeepseekV4Model(nn.Module):
         else:
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
+        if hidden_states.dtype != torch.bfloat16:
+            hidden_states = hidden_states.to(torch.bfloat16)
 
         if self.use_mega_moe:
             input_ids = input_ids.to(torch.int64)
