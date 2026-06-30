@@ -20,6 +20,7 @@ from vllm.utils.deep_gemm import (
     fp8_fp4_mqa_logits,
     fp8_fp4_paged_mqa_logits,
     has_deep_gemm,
+    is_deep_gemm_supported,
 )
 from vllm.utils.torch_utils import (
     LayerNameType,
@@ -31,6 +32,10 @@ from vllm.v1.attention.backends.mla.indexer import (
     DeepseekV32IndexerMetadata,
 )
 from vllm.v1.attention.ops.common import pack_seq_triton, unpack_seq_triton
+from vllm.v1.attention.ops.rocm_aiter_mla_sparse import (
+    fp8_mqa_logits_torch,
+    fp8_paged_mqa_logits_torch,
+)
 from vllm.v1.worker.workspace import current_workspace_manager
 
 logger = init_logger(__name__)
@@ -367,6 +372,19 @@ def sparse_attn_indexer(
                     chunk.cu_seqlen_ks,
                     chunk.cu_seqlen_ke,
                 )
+            elif current_platform.is_cuda() and not is_deep_gemm_supported():
+                if q_scale_slice is not None:
+                    raise RuntimeError(
+                        "Sparse attention indexer CUDA Torch fallback does not "
+                        "support FP4 Q."
+                    )
+                logits = fp8_mqa_logits_torch(
+                    q_slice_cast,
+                    (k_quant_cast, k_scale_cast),
+                    weights[chunk.token_start : chunk.token_end],
+                    chunk.cu_seqlen_ks,
+                    chunk.cu_seqlen_ke,
+                )
             else:
                 logits = fp8_fp4_mqa_logits(
                     (q_slice_cast, q_scale_slice),
@@ -456,6 +474,20 @@ def sparse_attn_indexer(
                 seq_lens_xpu,
                 decode_metadata.block_table,
                 decode_metadata.schedule_metadata,
+                max_model_len,
+            )
+        elif current_platform.is_cuda() and not is_deep_gemm_supported():
+            if padded_q_scale is not None:
+                raise RuntimeError(
+                    "Sparse attention indexer CUDA Torch fallback does not "
+                    "support FP4 Q."
+                )
+            logits = fp8_paged_mqa_logits_torch(
+                padded_q_quant_cast,
+                kv_cache,
+                weights[:num_padded_tokens],
+                seq_lens,
+                decode_metadata.block_table,
                 max_model_len,
             )
         else:
@@ -604,10 +636,10 @@ class SparseAttnIndexer(CustomOp):
         self.topk_indices_buffer = topk_indices_buffer
         self.skip_k_cache_insert = skip_k_cache_insert
         self.use_fp4_cache = use_fp4_cache
-        if current_platform.is_cuda() and not has_deep_gemm():
+        if current_platform.is_cuda() and self.use_fp4_cache and not has_deep_gemm():
             raise RuntimeError(
-                "Sparse Attention Indexer CUDA op requires DeepGEMM support in "
-                "the current vLLM environment."
+                "Sparse Attention Indexer CUDA FP4 cache path requires DeepGEMM "
+                "support in the current vLLM environment."
             )
 
     def forward_native(
