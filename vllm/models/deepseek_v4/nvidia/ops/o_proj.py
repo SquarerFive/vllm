@@ -23,6 +23,14 @@ def _linear_forward(linear: nn.Module, x: torch.Tensor) -> torch.Tensor:
     return output
 
 
+def _can_use_deep_gemm_fp8_wo_a(wo_a: nn.Module) -> bool:
+    return (
+        is_deep_gemm_supported()
+        and getattr(wo_a, "weight", None) is not None
+        and getattr(wo_a, "weight_scale_inv", None) is not None
+    )
+
+
 def compute_fp8_einsum_recipe() -> tuple[tuple[int, int, int], bool]:
     """fp8_einsum recipe + scale layout for the current GPU arch.
 
@@ -61,7 +69,7 @@ def deep_gemm_fp8_o_proj(
     if cos_sin_cache.dtype != torch.float32:
         cos_sin_cache = cos_sin_cache.float()
 
-    if not is_deep_gemm_supported():
+    if not _can_use_deep_gemm_fp8_wo_a(wo_a):
         o_ref = _fused_inverse_rope_gptj(o, positions, cos_sin_cache, rope_dim)
         o_ref = o_ref.view(o.shape[0], n_groups, -1)
         if hasattr(wo_a, "weight"):
