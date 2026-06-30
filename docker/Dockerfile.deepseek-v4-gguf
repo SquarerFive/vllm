@@ -60,6 +60,7 @@ import gguf
 import inspect
 from vllm.models.deepseek_v4.attention import DeepseekV4Attention
 from vllm.models.deepseek_v4.compressor import DeepseekCompressor
+from vllm.models.deepseek_v4.nvidia.model import DeepseekV4ForCausalLM
 from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
 from vllm_gguf_plugin.quantization import GGUFConfig
 import vllm_gguf_plugin.weights_adapter.default as default_adapter_module
@@ -77,6 +78,10 @@ assert "quant_config" in inspect.signature(DeepseekCompressor).parameters
 assert "fused_wkv_wgate(hidden_states)" in inspect.getsource(
     DeepseekV4Attention._fused_wkv_wgate
 )
+assert DeepseekV4ForCausalLM.packed_modules_mapping["fused_wkv_wgate"] == [
+    "wkv",
+    "wgate",
+]
 assert GGUFWeightsAdapter.matches(type("Config", (), {"model_type": "deepseek_v4"})())
 assert _resolve_gguf_model_type(
     "deepseek_v4", ("deepseek4", "deepseek2")
