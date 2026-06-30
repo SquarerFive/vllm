@@ -257,8 +257,12 @@ def _lazy_init() -> None:
     if _dg is None:
         return
 
-    # Enable PDL for DeepGEMM on architectures that support it (SM90+).
-    if current_platform.is_arch_support_pdl():
+    # SM120 support is provided by the external DeepGEMM fork, but its PDL
+    # path is not stable in DSv4's mixed DeepGEMM/TileLang/FlashInfer stream.
+    if current_platform.is_arch_support_pdl() and not (
+        current_platform.is_cuda()
+        and current_platform.is_device_capability_family(120)
+    ):
         _apply_pdl(_dg, True)
     _cublaslt_gemm_nt_impl = getattr(_dg, "cublaslt_gemm_nt", None)
     _fp8_gemm_nt_impl = getattr(_dg, "fp8_gemm_nt", None)

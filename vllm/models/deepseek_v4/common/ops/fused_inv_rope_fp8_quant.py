@@ -256,7 +256,10 @@ def _fused_inv_rope_fp8_quant_kernel_impl(
         (scale_inner * tma_aligned_T, 1, tma_aligned_T),
     )
     grid = (tma_aligned_T, n_groups * heads_per_group)
-    use_gdc = current_platform.is_arch_support_pdl()
+    use_gdc = current_platform.is_arch_support_pdl() and not (
+        current_platform.is_cuda()
+        and current_platform.is_device_capability_family(120)
+    )
     pdl_kwargs = {"launch_pdl": True} if use_gdc else {}
     _fused_inv_rope_fp8_quant_per_head[grid](
         o,

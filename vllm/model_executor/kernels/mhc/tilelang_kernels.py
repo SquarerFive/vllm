@@ -24,7 +24,11 @@ else:
     tilelang = None  # type: ignore[assignment]
     T = None  # type: ignore[assignment]
 
-ENABLE_PDL = current_platform.is_arch_support_pdl() and current_platform.is_cuda()
+ENABLE_PDL = (
+    current_platform.is_arch_support_pdl()
+    and current_platform.is_cuda()
+    and not current_platform.is_device_capability_family(120)
+)
 
 
 @cache
