@@ -15,6 +15,15 @@ def build_deepseek_v4_rope(
     compress_ratio: int,
 ) -> RotaryEmbedding:
     rope_parameters = config.rope_parameters
+    # When rope_parameters is a nested dict keyed by layer type (e.g.
+    # {"main": {...}, "compress": {...}}), select the right sub-dict based on
+    # compress_ratio.  Otherwise (flat dict) use rope_parameters as-is.
+    if isinstance(rope_parameters.get("main"), dict) and isinstance(
+        rope_parameters.get("compress"), dict
+    ):
+        rope_parameters = rope_parameters[
+            "compress" if compress_ratio > 1 else "main"
+        ]
     rope_parameters["rope_theta"] = (
         config.compress_rope_theta if compress_ratio > 1 else config.rope_theta
     )

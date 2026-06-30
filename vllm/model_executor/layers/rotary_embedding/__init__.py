@@ -41,9 +41,9 @@ def get_rope(
     if dtype is None:
         dtype = torch.get_default_dtype()
     if rope_parameters is not None:
-        # Transforms every value that is a list into a tuple for caching calls
+        # Transforms every value that is a list or dict into a tuple for caching calls
         rope_parameters_tuple = {
-            k: tuple(v) if isinstance(v, list) else v
+            k: tuple(v) if isinstance(v, list) else tuple(v.items()) if isinstance(v, dict) else v
             for k, v in rope_parameters.items()
         }
         rope_parameters_args = tuple(rope_parameters_tuple.items())
@@ -52,7 +52,7 @@ def get_rope(
 
     if dual_chunk_attention_config is not None:
         dual_chunk_attention_tuple = {
-            k: tuple(v) if isinstance(v, list) else v
+            k: tuple(v) if isinstance(v, list) else tuple(v.items()) if isinstance(v, dict) else v
             for k, v in dual_chunk_attention_config.items()
             if k != "sparse_attention_config"
         }
